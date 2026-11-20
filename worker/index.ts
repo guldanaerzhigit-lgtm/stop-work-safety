@@ -176,7 +176,7 @@ export default {
    if(!location||!hazard||!description||location.length>200||hazard.length>100||description.length>4000) return json({error:"Орынды, қауіп түрін және сипаттаманы дұрыс толтырыңыз."},400);
    const id="SW-"+crypto.randomUUID();
    try{
-    await env.DB.prepare("INSERT INTO stop_cases(id,location,hazard_type,description,status,reporter_id) VALUES(?,?,?,?, 'open',?)").bind(id,location,hazard,description,user!.id).run();
+    await env.DB.prepare("INSERT INTO stop_cases(id,location,hazard_type,description,status,reporter_id,team_id) VALUES(?,?,?,?, 'open',?,(SELECT team_id FROM users WHERE id=?))").bind(id,location,hazard,description,user!.id,user!.id).run();
     await env.DB.prepare("INSERT INTO case_events(case_id,actor_id,action,note) VALUES(?,?,?,?)").bind(id,user!.id,"created","STOP WORK хабарламасы тіркелді").run();
     const created=await env.DB.prepare("SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases WHERE id=?").bind(id).first();
     return json({case:created},201);
