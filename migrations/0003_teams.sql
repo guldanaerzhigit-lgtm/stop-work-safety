@@ -1,0 +1,12 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  leader_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users ADD COLUMN team_id TEXT REFERENCES teams(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_users_team ON users(team_id);
+CREATE INDEX IF NOT EXISTS idx_teams_leader ON teams(leader_id);
