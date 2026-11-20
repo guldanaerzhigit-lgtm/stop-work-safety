@@ -157,19 +157,18 @@ export default {
    const result=await env.DB.prepare("UPDATE users SET team_id=NULL WHERE id=? AND team_id=? AND role='employee'").bind(String(b.user_id||""),team.id).run();
    return result.meta.changes?json({ok:true}):json({error:"Қызметкер табылмады."},404);
   }
+  if(path==="/api/summary"&&method==="GET"){
+   if(!["manager","admin","hse"].includes(user!.role)) return json({error:"Жалпы есепке рұқсат жоқ."},403);
+   const totals=await env.DB.prepare("SELECT COUNT(*) AS total,SUM(status='open') AS open,SUM(status='review') AS review,SUM(status='resolved') AS resolved,SUM(status='released') AS released FROM stop_cases").first<any>();
+   const teams=await env.DB.prepare("SELECT t.id,t.name,COUNT(c.id) AS total,SUM(c.status IN ('open','review')) AS active FROM teams t LEFT JOIN stop_cases c ON c.team_id=t.id GROUP BY t.id,t.name ORDER BY active DESC").all();
+   return json({totals:totals||{},teams:teams.results||[]});
+  }
   if(path==="/api/cases"&&method==="GET"){
-   if(user!.role==="employee"){
-    const result=await env.DB.prepare("SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases WHERE reporter_id=? ORDER BY created_at DESC").bind(user!.id).all();
-    return json({cases:result.results||[]});
-   }
-   if(user!.role==="team_leader"){
-    const team=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
-    if(!team) return json({cases:[]});
-    const result=await env.DB.prepare("SELECT c.id,c.location,c.hazard_type,c.description,c.status,c.reporter_id,c.created_at,c.updated_at FROM stop_cases c JOIN users u ON u.id=c.reporter_id WHERE u.team_id=? ORDER BY c.created_at DESC").bind(team.id).all();
-    return json({cases:result.results||[]});
-   }
-   const result=await env.DB.prepare("SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases ORDER BY created_at DESC").all();
-   return json({cases:result.results||[]});
+   if(user!.role==="manager") return json({error:"Басшыға жинақталған есеп көрсетіледі."},403);
+   const base="SELECT c.id,c.location,c.hazard_type,c.description,c.status,c.reporter_id,u.name AS reporter_name,c.created_at,c.updated_at FROM stop_cases c LEFT JOIN users u ON u.id=c.reporter_id";
+   if(user!.role==="employee"){const r=await env.DB.prepare(base+" WHERE c.reporter_id=? ORDER BY c.created_at DESC").bind(user!.id).all();return json({cases:r.results||[]});}
+   if(user!.role==="team_leader"){const t=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();if(!t)return json({cases:[]});const r=await env.DB.prepare(base+" WHERE c.team_id=? ORDER BY c.created_at DESC").bind(t.id).all();return json({cases:r.results||[]});}
+   const r=await env.DB.prepare(base+" ORDER BY c.created_at DESC").all();return json({cases:r.results||[]});
   }
   if(path==="/api/cases"&&method==="POST"){
    let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
