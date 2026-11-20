@@ -182,6 +182,20 @@ export default {
     return json({case:created},201);
    }catch{return json({error:"Хабарламаны сақтау мүмкін болмады."},500);}
   }
+  const eventMatch=path.match(/^\/api\/cases\/([^/]+)\/events$/);
+  if(eventMatch&&method==="GET"){
+   const id=decodeURIComponent(eventMatch[1]);
+   const target=await env.DB.prepare("SELECT id,reporter_id,team_id FROM stop_cases WHERE id=?").bind(id).first<any>();
+   if(!target) return json({error:"Өтінім табылмады."},404);
+   if(user!.role==="manager") return json({error:"Басшыға жеке өтінім тарихы қолжетімсіз."},403);
+   if(user!.role==="employee"&&target.reporter_id!==user!.id) return json({error:"Бұл өтінімнің тарихын көруге рұқсатыңыз жоқ."},403);
+   if(user!.role==="team_leader"){
+    const team=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
+    if(!team||target.team_id!==team.id) return json({error:"Бұл өтінім сіздің тобыңызға тиесілі емес."},403);
+   }
+   const events=await env.DB.prepare("SELECT e.id,e.action,e.note,e.created_at,e.actor_id,COALESCE(u.name,'Жүйе пайдаланушысы') AS actor_name,u.role AS actor_role FROM case_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.case_id=? ORDER BY e.created_at ASC,e.id ASC").bind(id).all();
+   return json({events:events.results||[]});
+  }
   const match=path.match(/^\/api\/cases\/([^/]+)$/);
   if(match&&method==="PATCH"){
    if(!["team_leader","hse","admin"].includes(user!.role)) return json({error:"Өтінім мәртебесін өзгертуге құқығыңыз жоқ."},403);
