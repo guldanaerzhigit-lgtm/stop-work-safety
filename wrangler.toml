@@ -1,0 +1,19 @@
+name = "stop-work-safety"
+main = "worker/index.ts"
+compatibility_date = "2025-01-09"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# После создания D1 раскомментируйте и заполните database_id:
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "stop-work-safety"
+# database_id = "YOUR_D1_DATABASE_ID"
+
+# После создания R2 раскомментируйте:
+# [[r2_buckets]]
+# binding = "UPLOADS"
+# bucket_name = "stop-work-safety-uploads"
