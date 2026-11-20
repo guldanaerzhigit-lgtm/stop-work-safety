@@ -184,15 +184,18 @@ export default {
   }
   const match=path.match(/^\/api\/cases\/([^/]+)$/);
   if(match&&method==="PATCH"){
-   if(!["team_leader","hse","manager","admin"].includes(user!.role)) return json({error:"Өтінім мәртебесін өзгертуге құқығыңыз жоқ."},403);
+   if(!["team_leader","hse","admin"].includes(user!.role)) return json({error:"Өтінім мәртебесін өзгертуге құқығыңыз жоқ."},403);
    let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
    const status=b.status as CaseStatus;
    if(!statuses.has(status)) return json({error:"Мәртебе дұрыс емес."},400);
-   if(status==="released"&&!["hse","manager","admin"].includes(user!.role)) return json({error:"Жұмысты қайта бастауға тек еңбекті қорғау маманы немесе басшы рұқсат бере алады."},403);
+   if(user!.role==="team_leader"&&!["review","resolved"].includes(status)) return json({error:"Топ жетекшісі тек тексеру мен қауіптің жойылуын белгілей алады."},403);
+   if(status==="released"&&!["hse","admin"].includes(user!.role)) return json({error:"Жұмысқа қайта рұқсатты тек еңбекті қорғау маманы немесе әкімші бере алады."},403);
    const id=decodeURIComponent(match[1]);
    try{
-    const result=await env.DB.prepare("UPDATE stop_cases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status,id).run();
-    if(!result.meta.changes) return json({error:"Өтінім табылмады."},404);
+    const result=user!.role==="team_leader"
+     ? await env.DB.prepare("UPDATE stop_cases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND team_id=(SELECT id FROM teams WHERE leader_id=?)").bind(status,id,user!.id).run()
+     : await env.DB.prepare("UPDATE stop_cases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status,id).run();
+    if(!result.meta.changes) return json({error:"Өтінім табылмады немесе оған қол жеткізуге құқығыңыз жоқ."},404);
     await env.DB.prepare("INSERT INTO case_events(case_id,actor_id,action,note) VALUES(?,?,?,?)").bind(id,user!.id,"status:"+status,String(b.note||"").slice(0,1000)).run();
     const updated=await env.DB.prepare("SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases WHERE id=?").bind(id).first();
     return json({case:updated});
