@@ -63,8 +63,10 @@ export default {
    let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
    const name=String(b.name||"").trim(),email=String(b.email||"").trim(),password=String(b.password||"");
    if(name.length<2||name.length>120||!/^\S+@\S+\.\S+$/.test(email)||password.length<10) return json({error:"Аты-жөніңізді, дұрыс электрондық поштаны және кемінде 10 таңбалы құпиясөзді енгізіңіз."},400);
+   const existing=await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email.toLowerCase()).first();
+   if(existing) return json({error:"Бұл электрондық пошта бұрын тіркелген. Жүйеге кіру бөлімін пайдаланыңыз."},409);
    try{const user=await createAccount(env,name,email,password,"employee");return json({user:publicUser(user)},201,{"Set-Cookie":await startSession(env,user)});}
-   catch{return json({error:"Бұл электрондық пошта бұрын тіркелген."},409);}
+   catch{return json({error:"Тіркеу кезінде сервер қатесі болды. Дерекқор кестелері мен жарияланған Worker нұсқасын тексеру қажет."},500);}
   }
   if(path==="/api/auth/login"&&method==="POST"){
    let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
