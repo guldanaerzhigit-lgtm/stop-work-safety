@@ -6,7 +6,7 @@ export interface Env {
 }
 type Role = "employee" | "team_leader" | "hse" | "manager" | "admin";
 type CaseStatus = "open" | "review" | "resolved" | "released";
-type User = { id:string; name:string; email:string; role:Role };
+type User = { id:string; name:string; email:string; role:Role; team_id?:string|null };
 const roles = new Set<Role>(["employee","team_leader","hse","manager","admin"]);
 const statuses = new Set<CaseStatus>(["open","review","resolved","released"]);
 const json = (data:unknown,status=200,headers:Record<string,string>={}) =>
@@ -24,7 +24,7 @@ function cookie(request:Request,name:string){
 }
 async function currentUser(request:Request,env:Env):Promise<User|null>{
   const token=cookie(request,"sw_session"); if(!token) return null;
-  const row=await env.DB.prepare("SELECT u.id,u.name,u.email,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>CURRENT_TIMESTAMP").bind(await digest(token)).first<User>();
+  const row=await env.DB.prepare("SELECT u.id,u.name,u.email,u.role,u.team_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>CURRENT_TIMESTAMP").bind(await digest(token)).first<User>();
   return row||null;
 }
 function publicUser(u:User){return {id:u.id,name:u.name,email:u.email,role:u.role};}
@@ -113,12 +113,63 @@ export default {
    try{return json({user:publicUser(await createAccount(env,name,email,password,role))},201);}
    catch{return json({error:"Бұл электрондық пошта бұрын тіркелген."},409);}
   }
+  if(path==="/api/team"&&method==="GET"){
+   if(user!.role!=="team_leader") return json({error:"Бұл бөлім топ жетекшілеріне арналған."},403);
+   const team=await env.DB.prepare("SELECT id,name,leader_id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
+   if(!team) return json({team:null,members:[]});
+   const members=await env.DB.prepare("SELECT id,name,email,role FROM users WHERE team_id=? ORDER BY name").bind(team.id).all();
+   return json({team,members:members.results||[]});
+  }
+  if(path==="/api/team"&&method==="POST"){
+   if(user!.role!=="team_leader") return json({error:"Топ құруға тек топ жетекшісі құқылы."},403);
+   const existing=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first();
+   if(existing) return json({error:"Сізде топ бұрыннан бар."},409);
+   let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
+   const name=String(b.name||"").trim();
+   if(name.length<2||name.length>100) return json({error:"Топ атауын дұрыс енгізіңіз."},400);
+   const id=crypto.randomUUID();
+   await env.DB.prepare("INSERT INTO teams(id,name,leader_id) VALUES(?,?,?)").bind(id,name,user!.id).run();
+   return json({team:{id,name,leader_id:user!.id}},201);
+  }
+  if(path==="/api/team/members"&&method==="GET"){
+   if(user!.role!=="team_leader") return json({error:"Бұл бөлім топ жетекшілеріне арналған."},403);
+   const team=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
+   if(!team) return json({members:[],available:[]});
+   const members=await env.DB.prepare("SELECT id,name,email FROM users WHERE team_id=? ORDER BY name").bind(team.id).all();
+   const available=await env.DB.prepare("SELECT id,name,email FROM users WHERE role='employee' AND team_id IS NULL ORDER BY name").all();
+   return json({members:members.results||[],available:available.results||[]});
+  }
+  if(path==="/api/team/members"&&method==="POST"){
+   if(user!.role!=="team_leader") return json({error:"Қызметкерді топқа тек топ жетекшісі қоса алады."},403);
+   const team=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
+   if(!team) return json({error:"Алдымен өз тобыңызды құрыңыз."},400);
+   let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
+   const employeeId=String(b.user_id||"");
+   const result=await env.DB.prepare("UPDATE users SET team_id=? WHERE id=? AND role='employee' AND team_id IS NULL").bind(team.id,employeeId).run();
+   if(!result.meta.changes) return json({error:"Қызметкер табылмады немесе басқа топқа бекітілген."},409);
+   return json({ok:true});
+  }
+  if(path==="/api/team/members"&&method==="DELETE"){
+   if(user!.role!=="team_leader") return json({error:"Қызметкерді топтан тек топ жетекшісі шығара алады."},403);
+   const team=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
+   if(!team) return json({error:"Топ табылмады."},404);
+   let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
+   const result=await env.DB.prepare("UPDATE users SET team_id=NULL WHERE id=? AND team_id=? AND role='employee'").bind(String(b.user_id||""),team.id).run();
+   return result.meta.changes?json({ok:true}):json({error:"Қызметкер табылмады."},404);
+  }
   if(path==="/api/cases"&&method==="GET"){
-   const sql=user!.role==="employee"
-    ?"SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases WHERE reporter_id=? ORDER BY created_at DESC"
-    :"SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases ORDER BY created_at DESC";
-   const result=user!.role==="employee"?await env.DB.prepare(sql).bind(user!.id).all():await env.DB.prepare(sql).all();
-   return json({cases:(result.results||[]).map(r=>caseView(r as Record<string,unknown>))});
+   if(user!.role==="employee"){
+    const result=await env.DB.prepare("SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases WHERE reporter_id=? ORDER BY created_at DESC").bind(user!.id).all();
+    return json({cases:result.results||[]});
+   }
+   if(user!.role==="team_leader"){
+    const team=await env.DB.prepare("SELECT id FROM teams WHERE leader_id=?").bind(user!.id).first<any>();
+    if(!team) return json({cases:[]});
+    const result=await env.DB.prepare("SELECT c.id,c.location,c.hazard_type,c.description,c.status,c.reporter_id,c.created_at,c.updated_at FROM stop_cases c JOIN users u ON u.id=c.reporter_id WHERE u.team_id=? ORDER BY c.created_at DESC").bind(team.id).all();
+    return json({cases:result.results||[]});
+   }
+   const result=await env.DB.prepare("SELECT id,location,hazard_type,description,status,reporter_id,created_at,updated_at FROM stop_cases ORDER BY created_at DESC").all();
+   return json({cases:result.results||[]});
   }
   if(path==="/api/cases"&&method==="POST"){
    let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
