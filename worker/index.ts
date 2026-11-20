@@ -56,8 +56,15 @@ export default {
    if(b.bootstrap_key!==env.BOOTSTRAP_KEY) return json({error:"Бастапқы тіркеу кілті қате."},403);
    const name=String(b.name||"").trim(),email=String(b.email||"").trim(),password=String(b.password||"");
    if(name.length<2||!/^\S+@\S+\.\S+$/.test(email)||password.length<10) return json({error:"Аты-жөні, дұрыс электрондық пошта және кемінде 10 таңбалы құпиясөз енгізіңіз."},400);
-   try{const user=await createAccount(env,name,email,password,"admin");return json({user:publicUser(user)},201,{"Set-Cookie":await startSession(env,user)});}
-   catch{return json({error:"Бұл электрондық пошта тіркелген болуы мүмкін."},409);}
+   const existing=await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email.toLowerCase()).first();
+   if(existing) return json({error:"Бұл электрондық пошта бұрын тіркелген. Жүйеге кіру бөліміне өтіңіз."},409);
+   try{
+    const user=await createAccount(env,name,email,password,"admin");
+    const sessionCookie=await startSession(env,user);
+    return json({user:publicUser(user)},201,{"Set-Cookie":sessionCookie});
+   }catch{
+    return json({error:"Әкімші тіркеу кезінде сервер қатесі болды. Worker жарияланымы мен D1 байланысын тексеру қажет."},500);
+   }
   }
   if(path==="/api/auth/register"&&method==="POST"){
    let b:any;try{b=await request.json();}catch{return json({error:"Сұраныс пішімі қате."},400);}
