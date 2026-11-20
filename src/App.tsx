@@ -9,7 +9,7 @@ const roleNames:Record<Role,string>={employee:"Қызметкер",team_leader:"
 const statusNames:Record<ApiStatus,Status>={open:"Тіркелді",review:"Тексерілуде",resolved:"Қауіп жойылды",released:"Жұмысқа рұқсат берілді"};
 const statusValues:Record<Status,ApiStatus>={"Тіркелді":"open","Тексерілуде":"review","Қауіп жойылды":"resolved","Жұмысқа рұқсат берілді":"released"};
 const fromApi=(c:ApiCase):StopCase=>({id:c.id,place:c.location,risk:c.hazard_type,details:c.description,author:c.reporter_id,date:new Date(c.created_at.replace(" ","T")+"Z").toLocaleString("kk-KZ"),status:statusNames[c.status]||"Тіркелді"});
-async function api(path:string,options:RequestInit={}){const r=await fetch(path,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});const d=await r.json();if(!r.ok)throw new Error(d.error||"Сұранысты орындау мүмкін болмады.");return d;}
+async function api(path:string,options:RequestInit={}){const r=await fetch(path,{...options,credentials:"same-origin",headers:{"Content-Type":"application/json",...(options.headers||{})}});const raw=await r.text();let d:any;try{d=JSON.parse(raw);}catch{if(raw.trimStart().startsWith("<!DOCTYPE")||raw.trimStart().startsWith("<html"))throw new Error("Сервердің API қызметі әлі жаңартылмаған. Cloudflare Worker-ді қайта жариялау қажет.");throw new Error("Серверден түсініксіз жауап келді. Кейінірек қайталап көріңіз.");}if(!r.ok)throw new Error(d.error||"Сұранысты орындау мүмкін болмады.");return d;}
 export default function App(){
  const [user,setUser]=useState<User|null>(null),[mode,setMode]=useState<"login"|"register"|"bootstrap">("login");
  const [name,setName]=useState(""),[email,setEmail]=useState(""),[password,setPassword]=useState(""),[bootstrapKey,setBootstrapKey]=useState("");
