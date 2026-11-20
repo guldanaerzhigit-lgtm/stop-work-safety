@@ -58,12 +58,19 @@ export default {
    if(name.length<2||!/^\S+@\S+\.\S+$/.test(email)||password.length<10) return json({error:"Аты-жөні, дұрыс электрондық пошта және кемінде 10 таңбалы құпиясөз енгізіңіз."},400);
    const existing=await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email.toLowerCase()).first();
    if(existing) return json({error:"Бұл электрондық пошта бұрын тіркелген. Жүйеге кіру бөліміне өтіңіз."},409);
+   let user:User;
    try{
-    const user=await createAccount(env,name,email,password,"admin");
+    user=await createAccount(env,name,email,password,"admin");
+   }catch(error){
+    console.error("STOP WORK admin account insert failed:",error);
+    return json({error:"Әкімші деректерін users кестесіне сақтау мүмкін болмады. D1 қатесін тексеру қажет."},500);
+   }
+   try{
     const sessionCookie=await startSession(env,user);
     return json({user:publicUser(user)},201,{"Set-Cookie":sessionCookie});
-   }catch{
-    return json({error:"Әкімші тіркеу кезінде сервер қатесі болды. Worker жарияланымы мен D1 байланысын тексеру қажет."},500);
+   }catch(error){
+    console.error("STOP WORK admin session insert failed:",error);
+    return json({error:"Әкімші деректері сақталды, бірақ sessions кестесінде сессия ашылмады. Енді осы пошта және құпиясөзбен жүйеге кіріп көріңіз."},500);
    }
   }
   if(path==="/api/auth/register"&&method==="POST"){
