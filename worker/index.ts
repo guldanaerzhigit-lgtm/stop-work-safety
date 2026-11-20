@@ -63,7 +63,8 @@ export default {
     user=await createAccount(env,name,email,password,"admin");
    }catch(error){
     console.error("STOP WORK admin account insert failed:",error);
-    return json({error:"Әкімші деректерін users кестесіне сақтау мүмкін болмады. D1 қатесін тексеру қажет."},500);
+    const detail=error instanceof Error?error.message:String(error);
+    return json({error:"Әкімші деректерін сақтау кезінде D1 қатесі болды.",detail},500);
    }
    try{
     const sessionCookie=await startSession(env,user);
